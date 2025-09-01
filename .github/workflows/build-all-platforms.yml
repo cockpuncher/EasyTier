@@ -61,21 +61,32 @@ jobs:
       - name: Build binaries
         run: cargo build --release --target ${{ matrix.target }}
 
-      # 5. 将编译好的文件整理到一个文件夹，方便打包
+      # 5. [已修正] 将编译好的文件整理到一个文件夹，方便打包
       - name: Prepare Artifacts
         shell: bash
         run: |
           ARTIFACT_DIR="artifacts"
           mkdir -p $ARTIFACT_DIR
-          # 根据不同系统处理文件后缀名
+          
+          # 根据 Windows 系统设置 .exe 后缀
+          EXE_SUFFIX=""
           if [ "${{ runner.os }}" == "Windows" ]; then
-            cp target/${{ matrix.target }}/release/easytier-core.exe $ARTIFACT_DIR/
-            cp target/${{ matrix.target }}/release/easytier-cli.exe $ARTIFACT_DIR/
-            cp target/${{ matrix.target }}/release/easytier-gui.exe $ARTIFACT_DIR/
+            EXE_SUFFIX=".exe"
+          fi
+          
+          # 复制 core 和 cli (它们应该总是存在)
+          cp target/${{ matrix.target }}/release/easytier-core$EXE_SUFFIX $ARTIFACT_DIR/
+          cp target/${{ matrix.target }}/release/easytier-cli$EXE_SUFFIX $ARTIFACT_DIR/
+          
+          # 定义 GUI 文件路径
+          GUI_FILE="target/${{ matrix.target }}/release/easytier-gui$EXE_SUFFIX"
+          
+          # 检查 GUI 文件是否存在，如果存在才复制
+          if [ -f "$GUI_FILE" ]; then
+            echo "GUI file found. Copying..."
+            cp "$GUI_FILE" $ARTIFACT_DIR/
           else
-            cp target/${{ matrix.target }}/release/easytier-core $ARTIFACT_DIR/
-            cp target/${{ matrix.target }}/release/easytier-cli $ARTIFACT_DIR/
-            cp target/${{ matrix.target }}/release/easytier-gui $ARTIFACT_DIR/
+            echo "GUI file '$GUI_FILE' not found. Skipping."
           fi
 
       # 6. 上传整理好的文件夹作为构建产物 (Artifact)
