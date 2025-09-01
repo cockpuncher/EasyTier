@@ -1,48 +1,36 @@
-# 工作流名称
 name: Build EasyTier for All Platforms
 
-# 触发条件：允许我们从 Actions 页面手动点击按钮来运行
 on:
   workflow_dispatch:
 
 jobs:
-  # 定义一个名为 "build" 的任务
   build:
-    # 使用 "matrix" 策略，同时在多个系统上运行
     strategy:
       matrix:
         include:
-          # --- Linux x86_64 配置 ---
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: easytier-linux-x86_64
             
-          # --- Windows x86_64 配置 ---
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: easytier-windows-x86_64
             
-          # --- macOS ARM64 (Apple Silicon) 配置 ---
-          - os: macos-14 # 这是苹果 M1/M2/M3 芯片的 ARM 虚拟机
+          - os: macos-14
             target: aarch64-apple-darwin
             artifact_name: easytier-mac-arm64
 
-    # 指定虚拟机环境
     runs-on: ${{ matrix.os }}
 
-    # 任务步骤
     steps:
-      # 1. 下载仓库代码
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 安装 Rust 工具链，并添加指定的目标平台
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      # 3. 安装特定系统的编译依赖
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -57,39 +45,45 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install protobuf
 
-      # 4. 编译所有二进制文件 (core, cli, gui)
+      # 4. [已修正] 智能编译
       - name: Build binaries
-        run: cargo build --release --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          # 如果是 macOS ARM 平台，则只编译 core 和 cli
+          if [ "${{ matrix.target }}" == "aarch64-apple-darwin" ]; then
+            echo "Building for macOS ARM. Skipping GUI."
+            cargo build --release --target ${{ matrix.target }} --bin easytier-core --bin easytier-cli
+          else
+            # 对于其他所有平台，编译全部
+            echo "Building all binaries for ${{ matrix.target }}."
+            cargo build --release --target ${{ matrix.target }}
+          fi
 
-      # 5. [已修正] 将编译好的文件整理到一个文件夹，方便打包
+      # 5. [已修正] 智能打包
       - name: Prepare Artifacts
         shell: bash
         run: |
           ARTIFACT_DIR="artifacts"
           mkdir -p $ARTIFACT_DIR
           
-          # 根据 Windows 系统设置 .exe 后缀
           EXE_SUFFIX=""
           if [ "${{ runner.os }}" == "Windows" ]; then
             EXE_SUFFIX=".exe"
           fi
           
-          # 复制 core 和 cli (它们应该总是存在)
+          # 复制 core 和 cli
           cp target/${{ matrix.target }}/release/easytier-core$EXE_SUFFIX $ARTIFACT_DIR/
           cp target/${{ matrix.target }}/release/easytier-cli$EXE_SUFFIX $ARTIFACT_DIR/
           
-          # 定义 GUI 文件路径
+          # 只有在 GUI 文件存在时才复制
           GUI_FILE="target/${{ matrix.target }}/release/easytier-gui$EXE_SUFFIX"
-          
-          # 检查 GUI 文件是否存在，如果存在才复制
           if [ -f "$GUI_FILE" ]; then
             echo "GUI file found. Copying..."
             cp "$GUI_FILE" $ARTIFACT_DIR/
           else
-            echo "GUI file '$GUI_FILE' not found. Skipping."
+            echo "GUI file not found. Skipping."
           fi
 
-      # 6. 上传整理好的文件夹作为构建产物 (Artifact)
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
